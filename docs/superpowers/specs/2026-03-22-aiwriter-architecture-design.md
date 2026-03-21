@@ -71,7 +71,7 @@
 | job_runs | 任务执行记录 (Agent链路/状态/耗时) |
 | workflow_presets | 工作流模板 |
 
-### 1.6 Python 模型组织
+### 1.5 Python 模型组织
 
 ```
 backend/app/models/
@@ -99,7 +99,7 @@ backend/app/models/
 
 统一使用 SQLAlchemy 2.0 声明式映射 (DeclarativeBase)，所有模型包含 `id (UUID)`, `created_at`, `updated_at` 通用字段。
 
-### 1.7 数据库连接管理
+### 1.6 数据库连接管理
 
 ```
 backend/app/db/
@@ -178,7 +178,7 @@ backend/app/jobs/
 
 ### 2.4 混合 RAG 引擎 (Hybrid RAG Engine)
 
-> 注：遵循 production.md 1.1 节，RAG 引擎归入基础设施层。领域引擎层调用 RAG 进行检索。
+> 注：遵循 production.md 1.1 节，RAG 引擎归入基础设施层。物理文件位于 `engines/` 目录（与 production.md 目录结构一致），逻辑上属于基础设施层，被领域引擎层调用。
 
 ```python
 # backend/app/engines/hybrid_rag.py
@@ -271,6 +271,7 @@ class AuditRunner:
 - 通过率 (score≥7的维度数 / 启用维度数) ≥ 85% → 非阻塞，可选修订
 - 通过率 < 60% → 需要 rework 级重写
 - 注：题材 Profile 可禁用部分维度，分母随之变化
+- 注：此处改进了 production.md 的绝对分数制(28/33, 20/33)为通过率制，以更好地适应维度动态启禁用
 
 确定性检查（零 LLM 成本）：物资连续性(#5)、锁定属性违反(#7)、AI痕迹(#26)、重复表达(#27)、禁用词句(#28)
 
@@ -546,7 +547,7 @@ Architect 在规划前3章时，强制执行黄金三章约束：
 
 ---
 
-## 四点五、业务服务层 (Services Layer)
+## 五、业务服务层 (Services Layer)
 
 封装跨模型/跨引擎的业务逻辑，API 层调用 Service，Service 调用 Engine/Model。
 
@@ -563,7 +564,7 @@ backend/app/services/
 
 ---
 
-## 五、网关层 (API Gateway)
+## 六、网关层 (API Gateway)
 
 ### 5.1 FastAPI 应用结构
 
@@ -671,7 +672,7 @@ backend/app/api/
 
 ---
 
-## 六、表现层 (Presentation Layer)
+## 七、表现层 (Presentation Layer)
 
 ### 6.1 技术栈
 
@@ -713,7 +714,7 @@ backend/app/api/
 
 ---
 
-## 七、部署架构
+## 八、部署架构
 
 ### 7.1 Docker Compose
 
@@ -739,7 +740,7 @@ services:
 
 ---
 
-## 八、迭代实施路线图
+## 九、迭代实施路线图
 
 ### 迭代 1：项目骨架 + 数据层 (2-3周)
 
@@ -788,7 +789,7 @@ services:
 
 ---
 
-## 九、扩展策略
+## 十、扩展策略
 
 ### 水平扩展
 
@@ -806,7 +807,7 @@ services:
 
 ---
 
-## 十、非功能性需求
+## 十一、非功能性需求
 
 ### 性能指标
 
