@@ -14,6 +14,13 @@ class Settings(BaseSettings):
     # Embedding
     embedding_dim: int = 1536
 
+    # RAG settings
+    rag_top_k: int = 20
+    rag_top_m: int = 5
+    rag_rrf_k: int = 60
+    jina_api_key: str = ""
+    jina_rerank_model: str = "jina-reranker-v2-base-multilingual"
+
     # LLM
     openai_api_key: str = ""
     openai_base_url: str = "https://api.openai.com/v1"
