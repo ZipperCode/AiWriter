@@ -84,6 +84,7 @@ def create_app() -> FastAPI:
     from app.api.pacing import router as pacing_router
     from app.api.search import router as search_router
     from app.api.memories import router as memories_router
+    from app.api.ws import router as ws_router
 
     app.include_router(pipeline_router)
     app.include_router(truth_files_router)
@@ -92,6 +93,7 @@ def create_app() -> FastAPI:
     app.include_router(pacing_router)
     app.include_router(search_router)
     app.include_router(memories_router)
+    app.include_router(ws_router)
 
     return app
 
