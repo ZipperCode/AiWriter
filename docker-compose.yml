@@ -37,6 +37,15 @@ services:
       - ./backend:/app
       - ./storage:/app/storage
 
+  frontend:
+    build: ./frontend
+    ports: ["3000:3000"]
+    depends_on:
+      backend: { condition: service_started }
+    environment:
+      NEXT_PUBLIC_API_URL: http://backend:8000
+      NEXT_PUBLIC_WS_URL: ws://backend:8000
+
   celery-worker:
     build: ./backend
     command: celery -A app.jobs.celery_app worker -l info -c 4 -Q default,writing,audit
