@@ -54,3 +54,19 @@ class PipelineService:
             job.agent_chain = agent_chain
         await self.db.flush()
         return job
+
+    async def save_checkpoint(self, job_id: UUID, checkpoint_data: dict) -> JobRun:
+        """Save checkpoint data to a job run."""
+        job = await self.get_job_run(job_id)
+        if job is None:
+            raise ValueError(f"Job {job_id} not found")
+        job.checkpoint_data = checkpoint_data
+        await self.db.flush()
+        return job
+
+    async def get_checkpoint(self, job_id: UUID) -> dict:
+        """Get checkpoint data from a job run."""
+        job = await self.get_job_run(job_id)
+        if job is None:
+            raise ValueError(f"Job {job_id} not found")
+        return job.checkpoint_data or {}

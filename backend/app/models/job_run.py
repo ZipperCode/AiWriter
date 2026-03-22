@@ -20,6 +20,7 @@ class JobRun(Base, UUIDMixin, TimestampMixin):
     # pending/running/completed/failed/cancelled
     agent_chain: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
     result: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    checkpoint_data: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

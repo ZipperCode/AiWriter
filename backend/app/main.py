@@ -107,12 +107,51 @@ def create_app() -> FastAPI:
     app.include_router(usage_router)
     app.include_router(export_router)
 
+    # Health check endpoint (inside create_app so tests can access it)
+    @app.get("/health")
+    async def health():
+        components = {}
+        # Check database
+        try:
+            from app.db.session import async_engine
+            from sqlalchemy import text
+
+            async with async_engine.connect() as conn:
+                await conn.execute(text("SELECT 1"))
+            components["database"] = "ok"
+        except Exception as e:
+            components["database"] = f"error: {e}"
+
+        # Check Redis
+        try:
+            from redis.asyncio import Redis
+
+            redis = Redis.from_url(settings.redis_url)
+            await redis.ping()
+            await redis.aclose()
+            components["redis"] = "ok"
+        except Exception as e:
+            components["redis"] = f"error: {e}"
+
+        # Check providers
+        from app.providers.registry import provider_registry
+
+        providers = provider_registry.list_providers()
+        components["providers"] = providers if providers else "none registered"
+
+        overall = (
+            "ok"
+            if all(v == "ok" for k, v in components.items() if k in ("database", "redis"))
+            else "degraded"
+        )
+
+        return {
+            "status": overall,
+            "version": "0.1.0",
+            "components": components,
+        }
+
     return app
 
 
 app = create_app()
-
-
-@app.get("/health")
-async def health():
-    return {"status": "ok"}

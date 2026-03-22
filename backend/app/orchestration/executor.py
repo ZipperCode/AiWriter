@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Protocol
+from typing import Any, Callable, Protocol
 
 from app.orchestration.pipeline import PipelineDAG
 from app.schemas.agent import AgentContext, AgentResult
@@ -13,11 +13,24 @@ class AgentProtocol(Protocol):
 
 
 class PipelineExecutor:
-    def __init__(self, dag: PipelineDAG, agents: dict[str, AgentProtocol]):
+    def __init__(
+        self,
+        dag: PipelineDAG,
+        agents: dict[str, AgentProtocol],
+        on_checkpoint: Callable[[dict[str, AgentResult]], None] | None = None,
+        checkpoint: dict[str, AgentResult] | None = None,
+    ):
         self.dag = dag
         self.agents = agents
         self.node_results: dict[str, AgentResult] = {}
         self._loop_counts: dict[str, int] = {}
+        self.on_checkpoint = on_checkpoint
+        self._checkpoint_data: dict[str, AgentResult] = {}
+
+        # Restore from checkpoint if provided
+        if checkpoint:
+            self.node_results = dict(checkpoint)
+            self._checkpoint_data = dict(checkpoint)
 
     async def run(self, context: AgentContext) -> list[AgentResult]:
         results: list[AgentResult] = []
@@ -31,6 +44,22 @@ class PipelineExecutor:
 
         while queue:
             node_name = queue.pop(0)
+
+            # Skip nodes that are already in checkpoint
+            if node_name in self.node_results:
+                # Restore result from checkpoint and add to results
+                result = self.node_results[node_name]
+                results.append(result)
+
+                # If this node failed, stop execution
+                if not result.success:
+                    break
+
+                # Continue to next nodes even if restored from checkpoint
+                next_nodes = self.dag.get_next_nodes(node_name, result.data)
+                queue.extend(next_nodes)
+                continue
+
             if node_name in visited:
                 node = self.dag.nodes[node_name]
                 loop_count = self._loop_counts.get(node_name, 0)
@@ -43,19 +72,27 @@ class PipelineExecutor:
             node = self.dag.nodes[node_name]
             agent = self.agents.get(node.agent_name)
             if agent is None:
-                results.append(
-                    AgentResult(
-                        agent_name=node_name,
-                        success=False,
-                        error=f"Agent '{node.agent_name}' not found",
-                    )
+                result = AgentResult(
+                    agent_name=node_name,
+                    success=False,
+                    error=f"Agent '{node.agent_name}' not found",
                 )
+                results.append(result)
+                self.node_results[node_name] = result
+                self._checkpoint_data[node_name] = result
+                if self.on_checkpoint:
+                    self.on_checkpoint(dict(self._checkpoint_data))
                 break
 
             ctx = self._build_context(context, node_name)
             result = await agent.execute(ctx)
             results.append(result)
             self.node_results[node_name] = result
+            self._checkpoint_data[node_name] = result
+
+            # Save checkpoint after each node (success or failure)
+            if self.on_checkpoint:
+                self.on_checkpoint(dict(self._checkpoint_data))
 
             if not result.success:
                 break
