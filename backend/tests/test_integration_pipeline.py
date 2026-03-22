@@ -86,6 +86,15 @@ async def test_pipeline_agent_failure_stops():
 
 async def test_pipeline_audit_revise_loop():
     from app.providers.base import ChatResponse
+    # Build dimension-level scores for auditor's _call_llm.
+    # The auditor parses LLM response as {dim_id_str: {"score": x, "message": ...}}.
+    # Non-deterministic dimensions are those with is_deterministic=False (28 dims).
+    # First audit: all LLM dims score 2.0 => combined pass_rate < 0.6 => "rework"
+    # which matches condition r.get("recommendation") in ("revise", "rework")
+    from app.engines.rules_engine import AUDIT_DIMENSIONS
+    low_scores = {str(d["id"]): {"score": 2.0, "message": "needs work"} for d in AUDIT_DIMENSIONS if not d["is_deterministic"]}
+    high_scores = {str(d["id"]): {"score": 9.0, "message": "good"} for d in AUDIT_DIMENSIONS if not d["is_deterministic"]}
+
     call_count = {"n": 0}
     async def mock_chat(**kwargs):
         call_count["n"] += 1
@@ -99,10 +108,12 @@ async def test_pipeline_audit_revise_loop():
         if n == 5:
             return ChatResponse(content=json.dumps({"extracted_entities": [], "truth_file_updates": {}}), model="mock", usage={})
         if n == 6:
-            return ChatResponse(content=json.dumps({"scores": {"quality": 4}, "pass_rate": 0.3, "has_blocking": False, "issues": [{"dimension": "quality", "message": "needs work", "severity": "error"}], "recommendation": "revise"}), model="mock", usage={})
+            # First audit: low LLM scores => "rework" recommendation
+            return ChatResponse(content=json.dumps(low_scores), model="mock", usage={})
         if n == 7:
             return ChatResponse(content="Revised text.", model="mock", usage={})
-        return ChatResponse(content=json.dumps({"scores": {"quality": 8}, "pass_rate": 1.0, "has_blocking": False, "issues": [], "recommendation": "pass"}), model="mock", usage={})
+        # Second audit: high LLM scores => "pass" recommendation
+        return ChatResponse(content=json.dumps(high_scores), model="mock", usage={})
     provider = AsyncMock()
     provider.chat = mock_chat
     dag = PipelineDAG.build_chapter_dag()
