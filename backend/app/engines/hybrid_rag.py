@@ -140,3 +140,117 @@ class HybridRAGEngine:
                 score=float(score), metadata={"channel": "bm25"},
             ))
         return results
+
+    async def graph_search(
+        self, entity_id: UUID, project_id: UUID, depth: int = 2,
+    ) -> list[SearchResult]:
+        """BFS traversal of entity relationship graph."""
+        if depth <= 0:
+            return []
+
+        visited: set[UUID] = {entity_id}
+        frontier: set[UUID] = {entity_id}
+        results: list[SearchResult] = []
+
+        for _ in range(depth):
+            if not frontier:
+                break
+            next_frontier: set[UUID] = set()
+            for eid in frontier:
+                rels = (await self.db.execute(
+                    select(Relationship).where(
+                        Relationship.project_id == project_id,
+                        (Relationship.source_entity_id == eid)
+                        | (Relationship.target_entity_id == eid),
+                    )
+                )).scalars().all()
+
+                for rel in rels:
+                    neighbor_id = (
+                        rel.target_entity_id
+                        if rel.source_entity_id == eid
+                        else rel.source_entity_id
+                    )
+                    if neighbor_id not in visited:
+                        visited.add(neighbor_id)
+                        next_frontier.add(neighbor_id)
+            frontier = next_frontier
+
+        visited.discard(entity_id)
+        if visited:
+            neighbors = (await self.db.execute(
+                select(Entity).where(Entity.id.in_(visited))
+            )).scalars().all()
+            for e in neighbors:
+                content = f"[{e.entity_type}] {e.name}"
+                if e.description:
+                    content += f": {e.description}"
+                results.append(SearchResult(
+                    source="entity", source_id=e.id, content=content,
+                    score=1.0 / (depth + 1),
+                    metadata={"name": e.name, "entity_type": e.entity_type, "channel": "graph"},
+                ))
+        return results
+
+    @staticmethod
+    def rrf_fusion(
+        channels: list[list[SearchResult]], k: int = 60,
+    ) -> list[SearchResult]:
+        """Reciprocal Rank Fusion across multiple result channels."""
+        scores: dict[UUID, float] = {}
+        best_result: dict[UUID, SearchResult] = {}
+
+        for channel in channels:
+            for rank, result in enumerate(channel, start=1):
+                rrf_score = 1.0 / (k + rank)
+                scores[result.source_id] = scores.get(result.source_id, 0) + rrf_score
+                if result.source_id not in best_result:
+                    best_result[result.source_id] = result
+
+        fused = []
+        for source_id, score in sorted(scores.items(), key=lambda x: x[1], reverse=True):
+            r = best_result[source_id]
+            fused.append(SearchResult(
+                source=r.source, source_id=r.source_id, content=r.content,
+                score=score, metadata=r.metadata,
+            ))
+        return fused
+
+    async def rerank(
+        self, candidates: list[SearchResult], query: str, top_m: int = 5,
+    ) -> list[SearchResult]:
+        """Re-rank candidates using Jina Reranker API. Falls back to truncation."""
+        if not settings.jina_api_key or not candidates:
+            return candidates[:top_m]
+
+        documents = [c.content for c in candidates]
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.post(
+                    "https://api.jina.ai/v1/rerank",
+                    headers={
+                        "Authorization": f"Bearer {settings.jina_api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    json={
+                        "model": settings.jina_rerank_model,
+                        "query": query,
+                        "documents": documents,
+                        "top_n": top_m,
+                    },
+                )
+                resp.raise_for_status()
+                data = resp.json()
+
+            reranked = []
+            for item in data["results"][:top_m]:
+                idx = item["index"]
+                r = candidates[idx]
+                reranked.append(SearchResult(
+                    source=r.source, source_id=r.source_id, content=r.content,
+                    score=float(item["relevance_score"]),
+                    metadata=r.metadata,
+                ))
+            return reranked
+        except Exception:
+            return candidates[:top_m]

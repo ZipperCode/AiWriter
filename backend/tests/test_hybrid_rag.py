@@ -13,6 +13,7 @@ from app.models.chapter import Chapter
 from app.models.entity import Entity
 from app.models.memory_entry import MemoryEntry
 from app.models.relationship import Relationship
+from app.config import settings
 
 
 async def _setup_rag_data(db: AsyncSession):
@@ -131,3 +132,97 @@ async def test_bm25_search_no_results(db_session: AsyncSession):
     rag = HybridRAGEngine(db_session, embed_svc)
     results = await rag.bm25_search("不存在的内容", project.id, top_k=5)
     assert results == []
+
+
+@pytest.mark.asyncio
+async def test_graph_search(db_session: AsyncSession):
+    project, ch, e1, e2, e3, m1, m2, rel = await _setup_rag_data(db_session)
+    mock_provider = AsyncMock()
+    embed_svc = EmbeddingService(db_session, mock_provider)
+    rag = HybridRAGEngine(db_session, embed_svc)
+
+    results = await rag.graph_search(e1.id, project.id, depth=1)
+    assert len(results) > 0
+    names = [r.metadata.get("name") for r in results]
+    assert "青云宗" in names
+
+
+@pytest.mark.asyncio
+async def test_graph_search_depth_zero(db_session: AsyncSession):
+    project, ch, e1, e2, e3, m1, m2, rel = await _setup_rag_data(db_session)
+    mock_provider = AsyncMock()
+    embed_svc = EmbeddingService(db_session, mock_provider)
+    rag = HybridRAGEngine(db_session, embed_svc)
+    results = await rag.graph_search(e1.id, project.id, depth=0)
+    assert len(results) == 0
+
+
+def test_rrf_fusion():
+    id1, id2, id3 = uuid4(), uuid4(), uuid4()
+    channel_a = [
+        SearchResult("entity", id1, "A", 0.9),
+        SearchResult("entity", id2, "B", 0.8),
+    ]
+    channel_b = [
+        SearchResult("entity", id2, "B", 5.0),
+        SearchResult("entity", id3, "C", 3.0),
+    ]
+    fused = HybridRAGEngine.rrf_fusion([channel_a, channel_b], k=60)
+    assert len(fused) == 3
+    id2_result = next(r for r in fused if r.source_id == id2)
+    id1_result = next(r for r in fused if r.source_id == id1)
+    assert id2_result.score > id1_result.score
+
+
+@pytest.mark.asyncio
+async def test_rerank_with_mock(db_session: AsyncSession):
+    mock_provider = AsyncMock()
+    embed_svc = EmbeddingService(db_session, mock_provider)
+    rag = HybridRAGEngine(db_session, embed_svc)
+
+    candidates = [
+        SearchResult("entity", uuid4(), "叶辰是天才", 0.5),
+        SearchResult("memory", uuid4(), "青云宗入门测试", 0.4),
+        SearchResult("entity", uuid4(), "Dragon Sword", 0.3),
+    ]
+
+    # Create a mock response object
+    mock_response = MagicMock()
+    mock_response.json = MagicMock(return_value={
+        "results": [
+            {"index": 1, "relevance_score": 0.95},
+            {"index": 0, "relevance_score": 0.85},
+            {"index": 2, "relevance_score": 0.60},
+        ]
+    })
+    mock_response.raise_for_status = MagicMock()
+
+    # Create a mock client that supports async context manager
+    async def mock_post(*args, **kwargs):
+        return mock_response
+
+    mock_client_instance = MagicMock()
+    mock_client_instance.post = mock_post
+    mock_client_instance.__aenter__ = AsyncMock(return_value=mock_client_instance)
+    mock_client_instance.__aexit__ = AsyncMock(return_value=None)
+
+    with patch.object(settings, "jina_api_key", "test_key"):
+        with patch("app.engines.hybrid_rag.httpx.AsyncClient", return_value=mock_client_instance):
+            results = await rag.rerank(candidates, "青云宗测试", top_m=2)
+            assert len(results) == 2
+            assert results[0].score == 0.95
+
+
+@pytest.mark.asyncio
+async def test_rerank_fallback_no_api_key(db_session: AsyncSession):
+    mock_provider = AsyncMock()
+    embed_svc = EmbeddingService(db_session, mock_provider)
+    rag = HybridRAGEngine(db_session, embed_svc)
+
+    candidates = [
+        SearchResult("entity", uuid4(), "A", 0.9),
+        SearchResult("entity", uuid4(), "B", 0.8),
+    ]
+    with patch.object(settings, "jina_api_key", ""):
+        results = await rag.rerank(candidates, "query", top_m=1)
+        assert len(results) == 1
