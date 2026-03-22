@@ -67,6 +67,12 @@ def create_app() -> FastAPI:
     app.include_router(chapters_router)
     app.include_router(entities_router)
 
+    from app.api.pipeline import router as pipeline_router
+    from app.api.truth_files import router as truth_files_router
+
+    app.include_router(pipeline_router)
+    app.include_router(truth_files_router)
+
     return app
 
 
