@@ -58,8 +58,14 @@ def create_app() -> FastAPI:
 
     # Register routers
     from app.api.projects import router as projects_router
+    from app.api.volumes import router as volumes_router
+    from app.api.chapters import router as chapters_router
+    from app.api.entities import router as entities_router
 
     app.include_router(projects_router)
+    app.include_router(volumes_router)
+    app.include_router(chapters_router)
+    app.include_router(entities_router)
 
     return app
 
