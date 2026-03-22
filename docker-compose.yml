@@ -37,5 +37,24 @@ services:
       - ./backend:/app
       - ./storage:/app/storage
 
+  celery-worker:
+    build: ./backend
+    command: celery -A app.jobs.celery_app worker -l info -c 4 -Q default,writing,audit
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    environment:
+      DATABASE_URL: postgresql+asyncpg://aiwriter:${DB_PASSWORD:-aiwriter_dev}@postgres/aiwriter
+      REDIS_URL: redis://redis:6379
+      AUTH_TOKEN: ${AUTH_TOKEN:-dev-token-change-me}
+
+  celery-beat:
+    build: ./backend
+    command: celery -A app.jobs.celery_app beat -l info
+    depends_on:
+      redis: { condition: service_healthy }
+    environment:
+      REDIS_URL: redis://redis:6379
+
 volumes:
   postgres-data:
