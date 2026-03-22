@@ -33,6 +33,9 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     log_json: bool = True
 
+    # Encryption - Generate via: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+    fernet_key: str = ""
+
     model_config = {"env_file": ".env", "extra": "ignore"}
 
 
