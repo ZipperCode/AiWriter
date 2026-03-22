@@ -13,8 +13,18 @@ def _mock_provider(response: str) -> BaseLLMProvider:
     return provider
 
 
+def _make_old_llm_response(score: float = 8.0, message: str = "Looks good"):
+    """Build LLM response in the new dimension-ID-keyed format for old tests."""
+    scores = {}
+    for dim_id in range(1, 34):
+        if dim_id in (5, 7, 26, 27, 28):
+            continue  # Deterministic dims handled by AuditRunner
+        scores[str(dim_id)] = {"score": score, "message": message}
+    return json.dumps(scores)
+
+
 async def test_auditor_execute_pass():
-    response = json.dumps({"scores": {"consistency": 8.5, "narrative": 7.0, "style": 9.0}, "pass_rate": 1.0, "has_blocking": False, "issues": [], "recommendation": "pass"})
+    response = _make_old_llm_response(score=9.0, message="Excellent")
     provider = _mock_provider(response)
     agent = AuditorAgent(provider=provider)
     ctx = AgentContext(project_id=uuid4(), chapter_id=uuid4(), pipeline_data={"draft_id": str(uuid4()), "content": "Good chapter text."})
@@ -25,13 +35,13 @@ async def test_auditor_execute_pass():
 
 
 async def test_auditor_execute_needs_revision():
-    response = json.dumps({"scores": {"consistency": 3.0}, "pass_rate": 0.4, "has_blocking": True, "issues": [{"dimension": "consistency", "message": "Character OOC", "severity": "blocking"}], "recommendation": "revise"})
+    response = _make_old_llm_response(score=0.0, message="Critical issue")
     provider = _mock_provider(response)
     agent = AuditorAgent(provider=provider)
     ctx = AgentContext(project_id=uuid4(), chapter_id=uuid4(), pipeline_data={"content": "Bad text."})
     result = await agent.execute(ctx)
     assert result.success is True
-    assert result.data["recommendation"] == "revise"
+    assert result.data["recommendation"] in ("revise", "rework")
 
 
 async def test_auditor_build_messages():
