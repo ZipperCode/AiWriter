@@ -25,6 +25,10 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     openai_base_url: str = "https://api.openai.com/v1"
 
+    # Rate limiting
+    llm_rate_limit_max: int = 60  # max requests per window
+    llm_rate_limit_window: int = 60  # window in seconds
+
     # App
     debug: bool = False
     cors_origins: list[str] = ["http://localhost:3000"]
