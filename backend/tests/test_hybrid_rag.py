@@ -226,3 +226,26 @@ async def test_rerank_fallback_no_api_key(db_session: AsyncSession):
     with patch.object(settings, "jina_api_key", ""):
         results = await rag.rerank(candidates, "query", top_m=1)
         assert len(results) == 1
+
+
+@pytest.mark.asyncio
+async def test_retrieve_full_pipeline(db_session: AsyncSession):
+    project, ch, e1, e2, e3, m1, m2, rel = await _setup_rag_data(db_session)
+
+    mock_provider = AsyncMock()
+    mock_provider.embedding.return_value = [[0.88] + [0.05] + [0.0] * 1534]
+    embed_svc = EmbeddingService(db_session, mock_provider)
+    rag = HybridRAGEngine(db_session, embed_svc)
+
+    with patch.object(settings, "jina_api_key", ""):
+        results = await rag.retrieve(
+            query="叶辰的修炼",
+            project_id=project.id,
+            pov_entity_id=e1.id,
+            top_m=3,
+        )
+    assert len(results) > 0
+    assert len(results) <= 3
+    for r in results:
+        assert r.content
+        assert r.score > 0

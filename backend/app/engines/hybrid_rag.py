@@ -254,3 +254,36 @@ class HybridRAGEngine:
             return reranked
         except Exception:
             return candidates[:top_m]
+
+    async def retrieve(
+        self,
+        query: str,
+        project_id: UUID,
+        pov_entity_id: UUID | None = None,
+        top_m: int | None = None,
+    ) -> list[SearchResult]:
+        """Full retrieval pipeline: vector + BM25 + graph -> RRF -> rerank."""
+        top_k = settings.rag_top_k
+        if top_m is None:
+            top_m = settings.rag_top_m
+
+        # Compute query embedding
+        query_embedding = await self.embed_svc.embed_query(query)
+
+        # Three channels
+        vector_results = await self.vector_search(query_embedding, project_id, top_k)
+        bm25_results = await self.bm25_search(query, project_id, top_k)
+
+        channels = [vector_results, bm25_results]
+
+        # Graph search only if POV entity provided
+        if pov_entity_id:
+            graph_results = await self.graph_search(pov_entity_id, project_id, depth=2)
+            channels.append(graph_results)
+
+        # RRF fusion
+        fused = self.rrf_fusion(channels, k=settings.rag_rrf_k)
+
+        # Rerank top candidates
+        candidates = fused[: top_k * 2]
+        return await self.rerank(candidates, query, top_m)
