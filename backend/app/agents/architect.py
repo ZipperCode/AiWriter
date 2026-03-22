@@ -7,6 +7,14 @@ from app.providers.base import ChatMessage
 from app.schemas.agent import AgentContext, ArchitectOutput
 
 
+# --- Golden Three Chapters constraints ---
+GOLDEN_THREE_CHAPTERS: dict[int, str] = {
+    1: "【黄金三章·第1章约束】第1章必须立即抛出核心冲突，禁止大段背景灌输。场景卡必须包含核心冲突标记。快速抓住读者注意力。",
+    2: "【黄金三章·第2章约束】第2章必须展示金手指/核心能力，让读者看到爽点预期。场景卡必须包含金手指展示标记。建立阅读期待。",
+    3: "【黄金三章·第3章约束】第3章必须明确短期目标，给读者追读理由。场景卡必须包含短期目标明确标记。留住读者。",
+}
+
+
 class ArchitectAgent(BaseAgent):
     name = "architect"
     description = "Plans story structure: outlines, chapters, and scene cards"
@@ -44,10 +52,19 @@ Guidelines:
         if context.chapter_id:
             user_content += f"Chapter ID: {context.chapter_id}\n"
         user_content += f"\nPlease create the {stage} structure."
-        return [
+
+        messages = [
             ChatMessage(role="system", content=self.SYSTEM_PROMPT),
             ChatMessage(role="user", content=user_content),
         ]
+
+        # Golden Three Chapters: inject constraint for chapters 1-3
+        chapter_sort_order = context.params.get("chapter_sort_order")
+        golden_constraint = GOLDEN_THREE_CHAPTERS.get(chapter_sort_order)  # type: ignore[arg-type]
+        if golden_constraint:
+            messages.append(ChatMessage(role="system", content=golden_constraint))
+
+        return messages
 
     async def _call_llm(self, messages: list[ChatMessage], context: AgentContext) -> Any:
         resp = await self.provider.chat(messages=messages, model=self.model, temperature=self.temperature)
