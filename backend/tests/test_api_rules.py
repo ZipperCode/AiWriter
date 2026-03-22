@@ -4,7 +4,7 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_db
+from app.api.deps import get_db, verify_token
 from app.main import app
 from app.models.book_rules import BookRules
 from app.models.project import Project
@@ -17,6 +17,7 @@ async def _setup_client(db_session: AsyncSession):
         yield db_session
 
     app.dependency_overrides[get_db] = _override
+    app.dependency_overrides[verify_token] = lambda: "test-token"
     transport = ASGITransport(app=app)
     return AsyncClient(transport=transport, base_url="http://test")
 
@@ -256,7 +257,12 @@ async def test_get_merged_rules_not_found(db_session: AsyncSession):
 
 async def test_rules_endpoints_require_auth(db_session: AsyncSession):
     """All rules endpoints should require authentication."""
-    async with await _setup_client(db_session) as client:
+    app.dependency_overrides.clear()
+    async def _override():
+        yield db_session
+    app.dependency_overrides[get_db] = _override
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
         resp = await client.get("/api/rules/genres")
         assert resp.status_code in (401, 403)
 

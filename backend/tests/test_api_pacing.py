@@ -8,7 +8,7 @@ from app.models.project import Project
 from app.models.volume import Volume
 from app.models.chapter import Chapter
 from app.models.pacing_meta import PacingMeta
-from app.api.deps import get_db
+from app.api.deps import get_db, verify_token
 
 
 async def _setup_project_with_pacing(db: AsyncSession):
@@ -44,6 +44,7 @@ async def test_get_pacing_analysis(db_session: AsyncSession):
     project = await _setup_project_with_pacing(db_session)
 
     app.dependency_overrides[get_db] = lambda: db_session
+    app.dependency_overrides[verify_token] = lambda: "test-token"
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         resp = await client.get(
@@ -61,6 +62,7 @@ async def test_get_red_lines(db_session: AsyncSession):
     project = await _setup_project_with_pacing(db_session)
 
     app.dependency_overrides[get_db] = lambda: db_session
+    app.dependency_overrides[verify_token] = lambda: "test-token"
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         resp = await client.get(
@@ -77,6 +79,7 @@ async def test_get_pacing_suggestion(db_session: AsyncSession):
     project = await _setup_project_with_pacing(db_session)
 
     app.dependency_overrides[get_db] = lambda: db_session
+    app.dependency_overrides[verify_token] = lambda: "test-token"
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         resp = await client.get(

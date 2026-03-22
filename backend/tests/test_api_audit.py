@@ -2,7 +2,7 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_db
+from app.api.deps import get_db, verify_token
 from app.main import app
 from app.models.audit_record import AuditRecord
 from app.models.chapter import Chapter
@@ -14,6 +14,7 @@ from app.models.volume import Volume
 async def test_list_dimensions(db_session: AsyncSession):
     """GET /api/audit/dimensions should return all 33 dimensions."""
     app.dependency_overrides[get_db] = lambda: db_session
+    app.dependency_overrides[verify_token] = lambda: "test-token"
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         resp = await client.get(
@@ -53,6 +54,7 @@ async def test_list_audit_records(db_session: AsyncSession):
     await db_session.flush()
 
     app.dependency_overrides[get_db] = lambda: db_session
+    app.dependency_overrides[verify_token] = lambda: "test-token"
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         resp = await client.get(
@@ -68,6 +70,7 @@ async def test_list_audit_records(db_session: AsyncSession):
 async def test_run_quick_audit(db_session: AsyncSession):
     """POST /api/audit/quick should run deterministic checks only."""
     app.dependency_overrides[get_db] = lambda: db_session
+    app.dependency_overrides[verify_token] = lambda: "test-token"
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         resp = await client.post(
