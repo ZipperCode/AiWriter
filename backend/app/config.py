@@ -29,6 +29,10 @@ class Settings(BaseSettings):
     debug: bool = False
     cors_origins: list[str] = ["http://localhost:3000"]
 
+    # Logging
+    log_level: str = "INFO"
+    log_json: bool = True
+
     model_config = {"env_file": ".env", "extra": "ignore"}
 
 

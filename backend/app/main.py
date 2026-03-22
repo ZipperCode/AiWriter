@@ -25,12 +25,20 @@ async def lifespan(app: FastAPI):
 
 
 def create_app() -> FastAPI:
+    # Setup logging first
+    from app.logging import setup_logging
+    setup_logging(json_output=settings.log_json, log_level=settings.log_level)
+
     app = FastAPI(
         title="AiWriter API",
         version="0.1.0",
         description="AI Novel Writing System",
         lifespan=lifespan,
     )
+
+    # Add middleware (order matters - RequestIdMiddleware should be early)
+    from app.logging import RequestIdMiddleware
+    app.add_middleware(RequestIdMiddleware)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,
