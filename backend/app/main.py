@@ -9,7 +9,17 @@ from app.config import settings
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup
+    # Startup: Initialize providers
+    from app.providers.openai_compat import OpenAICompatProvider
+    from app.providers.registry import provider_registry
+
+    if settings.openai_api_key:
+        provider = OpenAICompatProvider(
+            base_url=settings.openai_base_url,
+            api_key=settings.openai_api_key,
+        )
+        provider_registry.register("openai", provider, is_default=True)
+
     yield
     # Shutdown
 
@@ -72,12 +82,16 @@ def create_app() -> FastAPI:
     from app.api.rules import router as rules_router
     from app.api.audit import router as audit_router
     from app.api.pacing import router as pacing_router
+    from app.api.search import router as search_router
+    from app.api.memories import router as memories_router
 
     app.include_router(pipeline_router)
     app.include_router(truth_files_router)
     app.include_router(rules_router)
     app.include_router(audit_router)
     app.include_router(pacing_router)
+    app.include_router(search_router)
+    app.include_router(memories_router)
 
     return app
 
