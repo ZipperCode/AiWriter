@@ -156,7 +156,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     rm -rf /var/lib/apt/lists/*
 
 COPY pyproject.toml .
-RUN pip install --no-cache-dir -e ".[dev]"
+# Install dependencies only (non-editable) — source is bind-mounted via docker-compose volumes
+RUN pip install --no-cache-dir ".[dev]"
 
 COPY . .
 
@@ -441,8 +442,8 @@ from app.db.base import Base
 from app.db.session import get_async_session
 from app.main import app
 
-# Use a separate test database or same with cleanup
-TEST_DATABASE_URL = settings.database_url
+# Use a separate test database to avoid polluting dev data
+TEST_DATABASE_URL = settings.database_url.replace("/aiwriter", "/aiwriter_test")
 
 test_engine = create_async_engine(TEST_DATABASE_URL, echo=False)
 test_session_factory = async_sessionmaker(
@@ -450,12 +451,7 @@ test_session_factory = async_sessionmaker(
 )
 
 
-@pytest.fixture(scope="session")
-def event_loop():
-    loop = asyncio.new_event_loop()
-    yield loop
-    loop.close()
-
+# No custom event_loop fixture needed — pytest-asyncio>=0.21 handles it automatically
 
 @pytest.fixture(autouse=True)
 async def setup_db():
@@ -829,9 +825,10 @@ git commit -m "feat: add Entity and Relationship models for world model"
 
 ```python
 # backend/app/models/truth_file.py
+from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import DateTime, ForeignKey, Integer, String, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -861,6 +858,7 @@ class TruthFile(Base, UUIDMixin, TimestampMixin):
 
 
 class TruthFileHistory(Base, UUIDMixin):
+    """History table — intentionally no TimestampMixin (no updated_at needed for immutable records)."""
     __tablename__ = "truth_file_history"
 
     truth_file_id: Mapped[UUID] = mapped_column(
@@ -871,10 +869,8 @@ class TruthFileHistory(Base, UUIDMixin):
     changed_by_chapter_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("chapters.id"), nullable=True
     )
-    created_at = mapped_column(
-        __import__("sqlalchemy").DateTime(timezone=True),
-        server_default=__import__("sqlalchemy").func.now(),
-        nullable=False,
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
     truth_file = relationship("TruthFile", back_populates="history")
@@ -973,10 +969,10 @@ cd backend && alembic init app/db/migrations
 
 - [ ] **Step 2: Edit alembic.ini**
 
-Set `sqlalchemy.url` to empty (we'll override in env.py):
+Set `sqlalchemy.url` to empty (override in env.py) and verify `script_location`:
 
 ```ini
-# line: sqlalchemy.url = ...
+script_location = app/db/migrations
 sqlalchemy.url =
 ```
 
@@ -1037,7 +1033,7 @@ else:
     run_migrations_online()
 ```
 
-- [ ] **Step 4: Generate initial migration**
+- [ ] **Step 4: Generate initial migration and add pgvector extension**
 
 Requires running PostgreSQL (use Docker):
 
@@ -1045,6 +1041,13 @@ Requires running PostgreSQL (use Docker):
 docker compose up -d postgres
 sleep 3
 cd backend && alembic revision --autogenerate -m "initial schema - all 20 tables"
+```
+
+Then edit the generated migration file to add pgvector extension at the top of `upgrade()`:
+```python
+def upgrade() -> None:
+    op.execute('CREATE EXTENSION IF NOT EXISTS vector')
+    # ... rest of auto-generated migration
 ```
 
 - [ ] **Step 5: Apply migration**
@@ -1169,6 +1172,28 @@ Run: `cd backend && pytest tests/test_auth.py -v`
 ```bash
 git add backend/app/api/deps.py backend/app/api/projects.py backend/app/main.py backend/tests/test_auth.py
 git commit -m "feat: add Bearer token auth and API dependencies"
+```
+
+- [ ] **Step 7: Add global exception handler for unified error format**
+
+Add to `main.py` in `create_app()`:
+```python
+from fastapi import Request
+from fastapi.responses import JSONResponse
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"error": {"code": str(exc.status_code), "message": exc.detail, "details": None}},
+    )
+
+@app.exception_handler(Exception)
+async def general_exception_handler(request: Request, exc: Exception):
+    return JSONResponse(
+        status_code=500,
+        content={"error": {"code": "500", "message": "Internal server error", "details": None}},
+    )
 ```
 
 ---
@@ -1511,7 +1536,11 @@ git commit -m "feat: add Chapters CRUD API"
 
 Endpoints: `POST /api/projects/{id}/entities`, `GET /api/projects/{id}/entities?entity_type=`, `PUT /api/entities/{id}`, `POST /api/projects/{id}/relationships`, `GET /api/projects/{id}/relationships`
 
+Note: `GET /api/projects/{id}/graph` (N度路径查询) deferred to iteration 2 when graph traversal engine is built. Add a stub endpoint returning 501 Not Implemented.
+
 - [ ] **Step 2: Implement EntityCreate/EntityResponse + RelationshipCreate/RelationshipResponse schemas**
+
+Note: Relationship endpoints are kept in `entities.py` since they are tightly coupled to the entity domain. If the file grows too large, split into `relationships.py` in iteration 2.
 
 - [ ] **Step 3: Implement entities router (including relationship endpoints)**
 
