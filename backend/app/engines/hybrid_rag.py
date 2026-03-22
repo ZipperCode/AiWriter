@@ -86,3 +86,57 @@ class HybridRAGEngine:
 
         results.sort(key=lambda r: r.score, reverse=True)
         return results[:top_k]
+
+    async def bm25_search(
+        self, query_text: str, project_id: UUID, top_k: int = 20,
+    ) -> list[SearchResult]:
+        """Search using BM25 with jieba tokenization."""
+        import jieba
+        from rank_bm25 import BM25Okapi
+
+        # Build corpus from entities + memories
+        docs: list[tuple[str, str, UUID]] = []  # (source, content, id)
+
+        entities = (await self.db.execute(
+            select(Entity).where(Entity.project_id == project_id)
+        )).scalars().all()
+        for e in entities:
+            text = f"[{e.entity_type}] {e.name}"
+            if e.description:
+                text += f": {e.description}"
+            docs.append(("entity", text, e.id))
+
+        # Memory entries via chapter join
+        memory_sql = (
+            select(MemoryEntry)
+            .join(Chapter, MemoryEntry.chapter_id == Chapter.id)
+            .where(Chapter.project_id == project_id)
+        )
+        memories = (await self.db.execute(memory_sql)).scalars().all()
+        for m in memories:
+            docs.append(("memory", m.summary, m.id))
+
+        if not docs:
+            return []
+
+        # Tokenize corpus and query
+        tokenized_corpus = [list(jieba.cut(d[1])) for d in docs]
+        tokenized_query = list(jieba.cut(query_text))
+
+        bm25 = BM25Okapi(tokenized_corpus)
+        scores = bm25.get_scores(tokenized_query)
+
+        # Rank and return top_k
+        indexed_scores = sorted(
+            enumerate(scores), key=lambda x: x[1], reverse=True,
+        )
+        results = []
+        for idx, score in indexed_scores[:top_k]:
+            if score <= 0:
+                break
+            source, content, source_id = docs[idx]
+            results.append(SearchResult(
+                source=source, source_id=source_id, content=content,
+                score=float(score), metadata={"channel": "bm25"},
+            ))
+        return results

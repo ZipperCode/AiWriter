@@ -106,3 +106,28 @@ async def test_vector_search_empty_project(db_session: AsyncSession):
     rag = HybridRAGEngine(db_session, embed_svc)
     results = await rag.vector_search([0.1] * 1536, project.id, top_k=5)
     assert results == []
+
+
+@pytest.mark.asyncio
+async def test_bm25_search(db_session: AsyncSession):
+    project, ch, e1, e2, e3, m1, m2, rel = await _setup_rag_data(db_session)
+    mock_provider = AsyncMock()
+    embed_svc = EmbeddingService(db_session, mock_provider)
+    rag = HybridRAGEngine(db_session, embed_svc)
+
+    results = await rag.bm25_search("叶辰 青云宗", project.id, top_k=5)
+    assert len(results) > 0
+    contents = " ".join(r.content for r in results)
+    assert "叶辰" in contents or "青云宗" in contents
+
+
+@pytest.mark.asyncio
+async def test_bm25_search_no_results(db_session: AsyncSession):
+    project = Project(title="Empty", genre="xuanhuan", status="active", settings={})
+    db_session.add(project)
+    await db_session.flush()
+    mock_provider = AsyncMock()
+    embed_svc = EmbeddingService(db_session, mock_provider)
+    rag = HybridRAGEngine(db_session, embed_svc)
+    results = await rag.bm25_search("不存在的内容", project.id, top_k=5)
+    assert results == []
