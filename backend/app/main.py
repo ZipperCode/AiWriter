@@ -94,6 +94,7 @@ def create_app() -> FastAPI:
     from app.api.memories import router as memories_router
     from app.api.ws import router as ws_router
     from app.api.usage import router as usage_router
+    from app.api.export import router as export_router
 
     app.include_router(pipeline_router)
     app.include_router(truth_files_router)
@@ -104,6 +105,7 @@ def create_app() -> FastAPI:
     app.include_router(memories_router)
     app.include_router(ws_router)
     app.include_router(usage_router)
+    app.include_router(export_router)
 
     return app
 
