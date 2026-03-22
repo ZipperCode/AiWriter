@@ -69,9 +69,11 @@ def create_app() -> FastAPI:
 
     from app.api.pipeline import router as pipeline_router
     from app.api.truth_files import router as truth_files_router
+    from app.api.rules import router as rules_router
 
     app.include_router(pipeline_router)
     app.include_router(truth_files_router)
+    app.include_router(rules_router)
 
     return app
 
