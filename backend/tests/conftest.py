@@ -3,16 +3,19 @@ from collections.abc import AsyncGenerator
 import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.pool import NullPool
 
 from app.config import settings
 from app.db.base import Base
-from app.db.session import get_async_session
+from app.api.deps import get_db
 from app.main import app
 
-# Use a separate test database to avoid polluting dev data
-TEST_DATABASE_URL = settings.database_url.replace("/aiwriter", "/aiwriter_test")
+# Use a separate test database
+_base = settings.database_url.rsplit("/", 1)[0]
+TEST_DATABASE_URL = f"{_base}/aiwriter_test"
 
-test_engine = create_async_engine(TEST_DATABASE_URL, echo=False)
+# NullPool avoids connection sharing issues in async tests
+test_engine = create_async_engine(TEST_DATABASE_URL, echo=False, poolclass=NullPool)
 test_session_factory = async_sessionmaker(
     test_engine, class_=AsyncSession, expire_on_commit=False
 )
@@ -31,11 +34,12 @@ async def setup_db():
 async def db_session() -> AsyncGenerator[AsyncSession, None]:
     async with test_session_factory() as session:
         yield session
+        await session.rollback()
 
 
 @pytest.fixture
 async def client() -> AsyncGenerator[AsyncClient, None]:
-    async def _override_session():
+    async def _override_get_db() -> AsyncGenerator[AsyncSession, None]:
         async with test_session_factory() as session:
             try:
                 yield session
@@ -44,7 +48,7 @@ async def client() -> AsyncGenerator[AsyncClient, None]:
                 await session.rollback()
                 raise
 
-    app.dependency_overrides[get_async_session] = _override_session
+    app.dependency_overrides[get_db] = _override_get_db
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
         yield c
