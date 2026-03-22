@@ -12,6 +12,9 @@ from app.models.book_rules import BookRules
 from app.engines.rules_engine import RulesEngine
 from app.engines.de_ai import DeAIEngine
 from app.engines.pacing_control import PacingController
+from app.engines.hybrid_rag import HybridRAGEngine
+from app.engines.embedding_service import EmbeddingService
+from app.providers.registry import provider_registry
 
 
 class ContextFilter:
@@ -21,6 +24,13 @@ class ContextFilter:
         self.db = db
         self._rules_engine = RulesEngine()
         self._deai_engine = DeAIEngine()
+
+    @staticmethod
+    def _get_context_strategy(sort_order: int) -> str:
+        """Determine context strategy based on chapter position."""
+        if sort_order <= 5:
+            return "full"
+        return "progressive"
 
     async def assemble_context(self, chapter_id: UUID, pov_character_id: UUID | None = None) -> dict:
         chapter = await self._get_chapter(chapter_id)
@@ -57,6 +67,13 @@ class ContextFilter:
         pacing_section = await self._get_pacing_section(project_id)
         if pacing_section:
             sections["pacing"] = pacing_section
+
+        # --- RAG section for progressive context ---
+        strategy = self._get_context_strategy(chapter.sort_order)
+        if strategy == "progressive":
+            rag_text = await self._get_rag_section(project_id, pov_character_id, chapter)
+            if rag_text:
+                sections["rag_results"] = rag_text
 
         system_prompt = self._build_system_prompt(sections)
         user_prompt = self._build_user_prompt(chapter, sections)
@@ -119,6 +136,28 @@ class ContextFilter:
         if entity.knowledge_boundary:
             parts.append(f"Knowledge: {self._format_dict(entity.knowledge_boundary)}")
         return "\n".join(parts)
+
+    async def _get_rag_section(self, project_id: UUID, pov_character_id: UUID | None, chapter: Chapter) -> str | None:
+        """Retrieve RAG results for progressive context mode."""
+        try:
+            provider = provider_registry.get_default()
+            if not provider:
+                return None
+            embed_svc = EmbeddingService(self.db, provider)
+            rag = HybridRAGEngine(self.db, embed_svc)
+            query = f"{chapter.title} {chapter.summary or ''}"
+            results = await rag.retrieve(
+                query=query, project_id=project_id,
+                pov_entity_id=pov_character_id, top_m=5,
+            )
+            if not results:
+                return None
+            lines = ["## RAG检索结果"]
+            for r in results:
+                lines.append(f"- [{r.source}] {r.content}")
+            return "\n".join(lines)
+        except Exception:
+            return None
 
     # --- New methods for rules, de-ai, pacing ---
 
