@@ -45,11 +45,12 @@ class PipelineExecutor:
         while queue:
             node_name = queue.pop(0)
 
-            # Skip nodes that are already in checkpoint
-            if node_name in self.node_results:
+            # Skip nodes that are already in checkpoint (but only on first visit)
+            if node_name in self._checkpoint_data and node_name not in visited:
                 # Restore result from checkpoint and add to results
-                result = self.node_results[node_name]
+                result = self._checkpoint_data[node_name]
                 results.append(result)
+                visited.add(node_name)
 
                 # If this node failed, stop execution
                 if not result.success:

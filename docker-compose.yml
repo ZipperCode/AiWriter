@@ -25,6 +25,7 @@ services:
   backend:
     build: ./backend
     ports: ["8000:8000"]
+    env_file: .env
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
@@ -33,6 +34,12 @@ services:
       REDIS_URL: redis://redis:6379
       AUTH_TOKEN: ${AUTH_TOKEN:-dev-token-change-me}
       EMBEDDING_DIM: ${EMBEDDING_DIM:-1536}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
+      FERNET_KEY: ${FERNET_KEY:-}
+      CORS_ORIGINS: ${CORS_ORIGINS:-["http://localhost:3000"]}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      LOG_JSON: ${LOG_JSON:-true}
     volumes:
       - ./backend:/app
       - ./storage:/app/storage
@@ -49,6 +56,7 @@ services:
   celery-worker:
     build: ./backend
     command: celery -A app.jobs.celery_app worker -l info -c 4 -Q default,writing,audit
+    env_file: .env
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
@@ -56,6 +64,11 @@ services:
       DATABASE_URL: postgresql+asyncpg://aiwriter:${DB_PASSWORD:-aiwriter_dev}@postgres/aiwriter
       REDIS_URL: redis://redis:6379
       AUTH_TOKEN: ${AUTH_TOKEN:-dev-token-change-me}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
+      FERNET_KEY: ${FERNET_KEY:-}
+    volumes:
+      - ./storage:/app/storage
 
   celery-beat:
     build: ./backend

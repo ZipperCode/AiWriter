@@ -2,10 +2,26 @@
 
 from uuid import uuid4
 
+import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.usage_record import UsageRecord
 from app.services.usage_service import UsageService
+
+import socket as _socket
+import pytest
+
+def _pg_ok():
+    try:
+        s = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM)
+        s.settimeout(1)
+        r = s.connect_ex(("127.0.0.1", 5432)) == 0
+        s.close()
+        return r
+    except Exception:
+        return False
+
+pytestmark = pytest.mark.skipif(not _pg_ok(), reason="PostgreSQL not available")
 
 
 async def test_record_usage(db_session: AsyncSession):

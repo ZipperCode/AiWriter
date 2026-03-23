@@ -4,6 +4,21 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
+import socket as _socket
+import pytest
+
+def _pg_ok():
+    try:
+        s = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM)
+        s.settimeout(1)
+        r = s.connect_ex(("127.0.0.1", 5432)) == 0
+        s.close()
+        return r
+    except Exception:
+        return False
+
+pytestmark = pytest.mark.skipif(not _pg_ok(), reason="PostgreSQL not available")
+
 from app.api.deps import get_db
 from app.main import app
 from app.services.usage_service import UsageService

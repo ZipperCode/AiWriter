@@ -12,6 +12,7 @@ engine = create_async_engine(
     pool_recycle=3600,
     echo=settings.debug,
 )
+async_engine = engine  # alias used by health check
 
 async_session_factory = async_sessionmaker(
     engine, class_=AsyncSession, expire_on_commit=False
